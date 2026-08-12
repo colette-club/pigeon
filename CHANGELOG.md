@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Fixed**
 
+- Reconnect instead of crashing when the FCM connection is closed. `Pigeon.HTTP`
+  kept a socket Mint had already marked dead, so the next push raised a
+  `MatchError` and killed the dispatcher worker, dropping the notification.
+  Dead connections are now detected on stream errors and re-established, pushes
+  retry once on a fresh socket, and a notification that cannot be sent is
+  reported to `:on_response` as `:unavailable` instead of vanishing.
+  ([#299](https://github.com/codedge-llc/pigeon/issues/299))
 - Return `:permission_denied` FCM error response if missing privileges. ([#290](https://github.com/codedge-llc/pigeon/pull/290))
 - Better handling of FCM errors with multiple details. ([#293](https://github.com/codedge-llc/pigeon/pull/293))
 - Minor documentation and typespec fixes. ([#294](https://github.com/codedge-llc/pigeon/pull/294), [#297](https://github.com/codedge-llc/pigeon/pull/297))

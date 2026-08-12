@@ -8,6 +8,7 @@ defmodule Pigeon.ADMTest do
   @invalid_key_msg ~r/^attempted to start without valid client id and secret/
 
   describe "init/1" do
+    @tag :integration
     test "initializes correctly if configured with client id and secret" do
       opts = [client_id: "amzn1.iba-client.abc123", client_secret: "abc123"]
 
@@ -47,6 +48,8 @@ defmodule Pigeon.ADMTest do
   end
 
   describe "handle_push/3" do
+    @describetag :integration
+
     test "returns an error on pushing with a bad registration_id" do
       reg_id = "bad_reg_id"
       n = Notification.new(reg_id, %{"message" => "example"})

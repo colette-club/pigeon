@@ -4,7 +4,10 @@ defmodule Pigeon.FCMTest do
   doctest Pigeon.FCM.Config, import: true
   doctest Pigeon.FCM.Notification, import: true
 
+  alias Pigeon.FCM
+  alias Pigeon.FCM.Config
   alias Pigeon.FCM.Notification
+  alias Pigeon.HTTP.RequestQueue
   require Logger
 
   @data %{"message" => "Test push"}
@@ -13,6 +16,37 @@ defmodule Pigeon.FCMTest do
 
   defp valid_fcm_reg_id do
     Application.get_env(:pigeon, :test)[:valid_fcm_reg_id]
+  end
+
+  # Google closes idle HTTP/2 connections. Mint marks the struct `:closed` once
+  # the transport is gone and `{:goaway, ...}` while the server drains; it
+  # refuses to open a stream on either, which is what used to raise here.
+  defp closed_socket, do: %Mint.HTTP2{state: :closed}
+  defp draining_socket, do: %Mint.HTTP2{state: {:goaway, :no_error, ""}}
+
+  # Points the config at a port nothing listens on, so reconnecting fails fast
+  # and deterministically instead of reaching fcm.googleapis.com.
+  defp unreachable_config do
+    {:ok, listener} = :gen_tcp.listen(0, [])
+    {:ok, port} = :inet.port(listener)
+    :ok = :gen_tcp.close(listener)
+
+    %Config{
+      auth: PigeonTest.Goth,
+      project_id: "example-project",
+      uri: ~c"localhost",
+      port: port
+    }
+  end
+
+  defp notification_replying_to(pid) do
+    notification = Notification.new({:token, "device-token"}, %{}, @data)
+    on_response = fn response -> send(pid, {:responded, response}) end
+
+    %{
+      notification
+      | __meta__: %{notification.__meta__ | on_response: on_response}
+    }
   end
 
   describe "init/1" do
@@ -31,7 +65,67 @@ defmodule Pigeon.FCMTest do
     end
   end
 
-  describe "handle_push/3" do
+  describe "handle_push/2" do
+    test "when the connection is dead, reports the notification as unavailable" do
+      state = %FCM{config: unreachable_config(), socket: closed_socket()}
+
+      assert {:noreply, ^state} =
+               FCM.handle_push(notification_replying_to(self()), state)
+
+      assert_receive {:responded,
+                      %Notification{response: :unavailable, error: error}},
+                     1_000
+
+      assert error
+    end
+
+    test "when the server is draining the connection, reports the notification as unavailable" do
+      state = %FCM{config: unreachable_config(), socket: draining_socket()}
+
+      assert {:noreply, ^state} =
+               FCM.handle_push(notification_replying_to(self()), state)
+
+      assert_receive {:responded, %Notification{response: :unavailable}}, 1_000
+    end
+
+    test "when the connection is dead and nobody is listening, does not raise" do
+      state = %FCM{config: unreachable_config(), socket: closed_socket()}
+      notification = Notification.new({:token, "device-token"}, %{}, @data)
+
+      assert {:noreply, ^state} = FCM.handle_push(notification, state)
+    end
+
+    test "when the connection is dead, leaves the request queue empty" do
+      state = %FCM{config: unreachable_config(), socket: closed_socket()}
+
+      assert {:noreply, new_state} =
+               FCM.handle_push(notification_replying_to(self()), state)
+
+      assert new_state.queue == RequestQueue.new()
+    end
+  end
+
+  describe "handle_info/2" do
+    test "when a ping finds a dead connection it cannot restore, stops the dispatcher" do
+      state = %FCM{config: unreachable_config(), socket: closed_socket()}
+
+      assert {:stop, reason} = FCM.handle_info(:ping, state)
+      assert reason
+    end
+
+    test "when the connection closed and cannot be restored, stops the dispatcher" do
+      state = %FCM{config: unreachable_config(), socket: closed_socket()}
+
+      assert {:stop, reason} =
+               FCM.handle_info({:closed, closed_socket()}, state)
+
+      assert reason
+    end
+  end
+
+  describe "push/1" do
+    @describetag :integration
+
     test "successfully sends a valid push" do
       notification =
         {:token, valid_fcm_reg_id()}

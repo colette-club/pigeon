@@ -5,6 +5,9 @@ defmodule Pigeon.APNSTest do
   doctest Pigeon.APNS.JWTConfig, import: true
   doctest Pigeon.APNS.Notification
 
+  alias Pigeon.APNS.Notification
+  alias PigeonTest.APNS.JWT
+
   @invalid_cert_msg ~r/^attempted to start without valid certificate/
   @invalid_key_msg ~r/^attempted to start without valid key/
   @invalid_team_id_msg ~r/^attempted to start without valid team_id/
@@ -26,7 +29,7 @@ defmodule Pigeon.APNSTest do
   def test_notification(msg) do
     msg
     |> test_message()
-    |> Pigeon.APNS.Notification.new(
+    |> Notification.new(
       test_token(),
       test_topic()
     )
@@ -58,15 +61,16 @@ defmodule Pigeon.APNSTest do
   end
 
   describe "init/1 (JWT)" do
+    @tag :integration
     test "sends a push with valid config" do
       n =
-        Pigeon.APNS.Notification.new(
+        Notification.new(
           test_message("push/1 with jwt"),
           test_token(),
           test_topic()
         )
 
-      assert PigeonTest.APNS.JWT.push(n).response == :success
+      assert JWT.push(n).response == :success
     end
 
     test "raises if configured with invalid key raw text" do
@@ -119,6 +123,8 @@ defmodule Pigeon.APNSTest do
   end
 
   describe "push/1" do
+    @describetag :integration
+
     test "returns notification with :success on successful push" do
       n = test_notification("push/1")
       assert PigeonTest.APNS.push(n).response == :success
@@ -126,7 +132,7 @@ defmodule Pigeon.APNSTest do
 
     test "returns notification with response error on unsuccessful push" do
       n =
-        Pigeon.APNS.Notification.new(
+        Notification.new(
           test_message("push/1"),
           "bad_token",
           test_topic()
@@ -139,7 +145,7 @@ defmodule Pigeon.APNSTest do
       n = test_notification("push/1")
 
       bad_n =
-        Pigeon.APNS.Notification.new(
+        Notification.new(
           test_message("push/1"),
           "asdf1234",
           test_topic()
@@ -156,6 +162,8 @@ defmodule Pigeon.APNSTest do
   end
 
   describe "push/2 with :on_response" do
+    @describetag :integration
+
     test "returns :success response on successful push" do
       pid = self()
       on_response = fn x -> send(pid, x) end
@@ -163,7 +171,7 @@ defmodule Pigeon.APNSTest do
 
       assert PigeonTest.APNS.push(n, on_response: on_response) == :ok
 
-      assert_receive(%Pigeon.APNS.Notification{response: :success}, 5_000)
+      assert_receive(%Notification{response: :success}, 5_000)
     end
 
     test "returns :bad_message_id response if apns-id is invalid" do
@@ -173,12 +181,12 @@ defmodule Pigeon.APNSTest do
       n =
         "push/2 :bad_message_id"
         |> test_message()
-        |> Pigeon.APNS.Notification.new(test_token(), test_topic(), bad_id())
+        |> Notification.new(test_token(), test_topic(), bad_id())
 
       assert PigeonTest.APNS.push(n, on_response: on_response) == :ok
 
       assert_receive(
-        %Pigeon.APNS.Notification{response: :bad_message_id},
+        %Notification{response: :bad_message_id},
         5_000
       )
     end
@@ -190,12 +198,12 @@ defmodule Pigeon.APNSTest do
       n =
         "push/2 :bad_device_token"
         |> test_message()
-        |> Pigeon.APNS.Notification.new(bad_token(), test_topic())
+        |> Notification.new(bad_token(), test_topic())
 
       assert PigeonTest.APNS.push(n, on_response: on_response) == :ok
 
       assert_receive(
-        %Pigeon.APNS.Notification{response: :bad_device_token},
+        %Notification{response: :bad_device_token},
         5_000
       )
     end
@@ -207,11 +215,11 @@ defmodule Pigeon.APNSTest do
       n =
         "push/2 :missing_topic"
         |> test_message()
-        |> Pigeon.APNS.Notification.new(test_token())
+        |> Notification.new(test_token())
 
       assert PigeonTest.APNS.push(n, on_response: on_response) == :ok
 
-      assert_receive(%Pigeon.APNS.Notification{response: :missing_topic}, 5_000)
+      assert_receive(%Notification{response: :missing_topic}, 5_000)
     end
   end
 end

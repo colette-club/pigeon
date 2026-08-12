@@ -104,13 +104,6 @@ defmodule Pigeon.FCM do
   for more details.
   """
 
-  @max_retries 3
-
-  defstruct config: nil,
-            queue: Pigeon.HTTP.RequestQueue.new(),
-            retries: @max_retries,
-            socket: nil
-
   @behaviour Pigeon.Adapter
 
   import Pigeon.Tasks, only: [process_on_response: 1]
@@ -121,9 +114,16 @@ defmodule Pigeon.FCM do
 
   require Logger
 
+  @max_retries 3
+
+  defstruct config: nil,
+            queue: RequestQueue.new(),
+            retries: @max_retries,
+            socket: nil
+
   @impl Pigeon.Adapter
   def init(opts) do
-    config = Pigeon.FCM.Config.new(opts)
+    config = Config.new(opts)
 
     Configurable.validate!(config)
 
@@ -140,43 +140,17 @@ defmodule Pigeon.FCM do
   end
 
   @impl Pigeon.Adapter
-  def handle_push(notification, state) do
-    %{config: config, queue: queue, socket: socket} = state
-    headers = Configurable.push_headers(config, notification, [])
-    payload = Configurable.push_payload(config, notification, [])
-    method = "POST"
-    path = "/v1/projects/#{config.project_id}/messages:send"
-
-    {:ok, socket, ref} =
-      Mint.HTTP.request(socket, method, path, headers, payload)
-
-    new_q = RequestQueue.add(queue, ref, notification)
-
-    state =
-      state
-      |> Map.put(:socket, socket)
-      |> Map.put(:queue, new_q)
-
-    {:noreply, state}
+  def handle_push(notification, %{socket: socket} = state) do
+    maybe_send(notification, state, Mint.HTTP.open?(socket, :write))
   end
 
   @impl Pigeon.Adapter
-  def handle_info(:ping, %{config: config, socket: socket} = state) do
-    {:ok, socket, _ref} = Mint.HTTP2.ping(socket)
-    Configurable.schedule_ping(config)
-
-    {:noreply, %{state | socket: socket}}
+  def handle_info(:ping, %{socket: socket} = state) do
+    maybe_ping(state, Mint.HTTP.open?(socket, :write))
   end
 
-  def handle_info({:closed, _}, %{config: config} = state) do
-    case connect_socket(config) do
-      {:ok, socket} ->
-        Configurable.schedule_ping(config)
-        {:noreply, %{state | socket: socket}}
-
-      {:error, reason} ->
-        {:stop, reason}
-    end
+  def handle_info({:closed, _socket}, state) do
+    reconnect(state)
   end
 
   def handle_info(msg, state) do
@@ -199,6 +173,95 @@ defmodule Pigeon.FCM do
         |> Map.put(:error, error)
         |> Map.put(:response, Error.parse(error))
         |> process_on_response()
+    end
+  end
+
+  defp maybe_send(notification, state, true) do
+    case send_request(notification, state) do
+      {:ok, state} -> {:noreply, state}
+      {:error, state, _reason} -> reconnect_and_send(notification, state)
+    end
+  end
+
+  defp maybe_send(notification, state, false) do
+    reconnect_and_send(notification, state)
+  end
+
+  # Retries the push exactly once, on a freshly connected socket. A push that
+  # fails again is reported rather than retried, so an FCM outage degrades
+  # delivery instead of spinning here.
+  defp reconnect_and_send(notification, %{config: config} = state) do
+    case connect_socket(config) do
+      {:ok, socket} ->
+        Configurable.schedule_ping(config)
+        send_reconnected(notification, %{state | socket: socket})
+
+      {:error, reason} ->
+        {:noreply, report_unavailable(notification, state, reason)}
+    end
+  end
+
+  defp send_reconnected(notification, state) do
+    case send_request(notification, state) do
+      {:ok, state} ->
+        {:noreply, state}
+
+      {:error, state, reason} ->
+        {:noreply, report_unavailable(notification, state, reason)}
+    end
+  end
+
+  defp send_request(notification, state) do
+    %{config: config, queue: queue, socket: socket} = state
+    headers = Configurable.push_headers(config, notification, [])
+    payload = Configurable.push_payload(config, notification, [])
+    method = "POST"
+    path = "/v1/projects/#{config.project_id}/messages:send"
+
+    case Mint.HTTP.request(socket, method, path, headers, payload) do
+      {:ok, socket, ref} ->
+        queue = RequestQueue.add(queue, ref, notification)
+        {:ok, %{state | socket: socket, queue: queue}}
+
+      {:error, socket, reason} ->
+        {:error, %{state | socket: socket}, reason}
+    end
+  end
+
+  # A notification that never reached the wire still has to reach the caller's
+  # on_response, otherwise its delivery status is silently lost.
+  defp report_unavailable(notification, state, reason) do
+    Logger.error("FCM push could not be sent: #{inspect(reason)}")
+
+    notification
+    |> Map.put(:error, reason)
+    |> Map.put(:response, :unavailable)
+    |> process_on_response()
+
+    state
+  end
+
+  defp maybe_ping(%{config: config, socket: socket} = state, true) do
+    case Mint.HTTP2.ping(socket) do
+      {:ok, socket, _ref} ->
+        Configurable.schedule_ping(config)
+        {:noreply, %{state | socket: socket}}
+
+      {:error, socket, _reason} ->
+        reconnect(%{state | socket: socket})
+    end
+  end
+
+  defp maybe_ping(state, false), do: reconnect(state)
+
+  defp reconnect(%{config: config} = state) do
+    case connect_socket(config) do
+      {:ok, socket} ->
+        Configurable.schedule_ping(config)
+        {:noreply, %{state | socket: socket}}
+
+      {:error, reason} ->
+        {:stop, reason}
     end
   end
 
