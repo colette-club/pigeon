@@ -2,23 +2,25 @@ defmodule Pigeon.ADM.ResultParserTest do
   use ExUnit.Case
   doctest Pigeon.ADM.ResultParser, import: true
 
-  test "parses known error reasons without crashing" do
-    n = Pigeon.ADM.Notification.new("test")
+  alias Pigeon.ADM.{Notification, ResultParser}
 
-    Pigeon.ADM.ResultParser.parse(n, %{"reason" => "InvalidRegistrationId"})
-    Pigeon.ADM.ResultParser.parse(n, %{"reason" => "InvalidData"})
-    Pigeon.ADM.ResultParser.parse(n, %{"reason" => "InvalidConsolidationKey"})
-    Pigeon.ADM.ResultParser.parse(n, %{"reason" => "InvalidExpiration"})
-    Pigeon.ADM.ResultParser.parse(n, %{"reason" => "InvalidChecksum"})
-    Pigeon.ADM.ResultParser.parse(n, %{"reason" => "InvalidType"})
-    Pigeon.ADM.ResultParser.parse(n, %{"reason" => "Unregistered"})
-    Pigeon.ADM.ResultParser.parse(n, %{"reason" => "AccessTokenExpired"})
-    Pigeon.ADM.ResultParser.parse(n, %{"reason" => "MessageTooLarge"})
-    Pigeon.ADM.ResultParser.parse(n, %{"reason" => "MaxRateExceeded"})
+  test "parses known error reasons without crashing" do
+    n = Notification.new("test")
+
+    ResultParser.parse(n, %{"reason" => "InvalidRegistrationId"})
+    ResultParser.parse(n, %{"reason" => "InvalidData"})
+    ResultParser.parse(n, %{"reason" => "InvalidConsolidationKey"})
+    ResultParser.parse(n, %{"reason" => "InvalidExpiration"})
+    ResultParser.parse(n, %{"reason" => "InvalidChecksum"})
+    ResultParser.parse(n, %{"reason" => "InvalidType"})
+    ResultParser.parse(n, %{"reason" => "Unregistered"})
+    ResultParser.parse(n, %{"reason" => "AccessTokenExpired"})
+    ResultParser.parse(n, %{"reason" => "MessageTooLarge"})
+    ResultParser.parse(n, %{"reason" => "MaxRateExceeded"})
   end
 
   test "handles unknown reasons" do
-    n = Pigeon.ADM.Notification.new("test")
-    Pigeon.ADM.ResultParser.parse(n, %{"reason" => "NotReal"})
+    n = Notification.new("test")
+    ResultParser.parse(n, %{"reason" => "NotReal"})
   end
 end

@@ -1,6 +1,8 @@
 defmodule Pigeon.APNS.ErrorTest do
   use ExUnit.Case, async: true
 
+  alias Pigeon.APNS.Error
+
   test "parse/1 handles error reasons" do
     reasons = [
       {"BadCertificate", :bad_certificate},
@@ -37,12 +39,12 @@ defmodule Pigeon.APNS.ErrorTest do
 
     for {actual, expected} <- reasons do
       payload = JSON.encode!(%{"reason" => actual})
-      assert Pigeon.APNS.Error.parse(payload) == expected
+      assert Error.parse(payload) == expected
     end
   end
 
   test "parse/1 handles unknown error reasons" do
     payload = JSON.encode!(%{"reason" => "UnknownReason"})
-    assert Pigeon.APNS.Error.parse(payload) == :unknown_error
+    assert Error.parse(payload) == :unknown_error
   end
 end

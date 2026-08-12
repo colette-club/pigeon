@@ -2,11 +2,13 @@ defmodule Pigeon.ADM.NotificationTest do
   use ExUnit.Case
   doctest Pigeon.ADM.Notification
 
+  alias Pigeon.ADM.Notification
+
   def test_registration_id, do: "test1234"
   def test_data, do: %{message: "your message"}
 
   test "new/1" do
-    expected_result = %Pigeon.ADM.Notification{
+    expected_result = %Notification{
       registration_id: test_registration_id(),
       payload: %{"data" => %{}},
       updated_registration_id: nil,
@@ -16,11 +18,11 @@ defmodule Pigeon.ADM.NotificationTest do
     }
 
     assert expected_result ==
-             Pigeon.ADM.Notification.new(test_registration_id())
+             Notification.new(test_registration_id())
   end
 
   test "new/2" do
-    expected_result = %Pigeon.ADM.Notification{
+    expected_result = %Notification{
       registration_id: test_registration_id(),
       payload: %{"data" => %{"message" => "your message"}},
       updated_registration_id: nil,
@@ -30,25 +32,25 @@ defmodule Pigeon.ADM.NotificationTest do
     }
 
     assert expected_result ==
-             Pigeon.ADM.Notification.new(test_registration_id(), test_data())
+             Notification.new(test_registration_id(), test_data())
   end
 
   describe "calculate_md5/1" do
     test "puts md5 hash if a valid data payload" do
-      n = %Pigeon.ADM.Notification{
+      n = %Notification{
         payload: %{"data" => %{message: "your message", hi: "bye"}}
       }
 
-      result_n = Pigeon.ADM.Notification.calculate_md5(n)
+      result_n = Notification.calculate_md5(n)
       assert "w2qyl/pbK7HVl9zfzu7Nww==" == result_n.md5
     end
 
     test "does nothing if invalid data payload" do
-      n = %Pigeon.ADM.Notification{
+      n = %Notification{
         payload: :bad
       }
 
-      result_n = Pigeon.ADM.Notification.calculate_md5(n)
+      result_n = Notification.calculate_md5(n)
       refute result_n.md5
     end
   end
@@ -61,7 +63,7 @@ defmodule Pigeon.ADM.NotificationTest do
       456 => true
     }
 
-    n = Pigeon.ADM.Notification.new(test_registration_id(), data)
+    n = Notification.new(test_registration_id(), data)
 
     expected_result = %{
       "message" => "your message",

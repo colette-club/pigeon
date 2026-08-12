@@ -1,10 +1,12 @@
 defmodule Pigeon.SandboxTest do
   use ExUnit.Case
 
+  alias Pigeon.FCM.Notification
+
   test "marks nil :response as :success" do
     n =
       {:token, "test"}
-      |> Pigeon.FCM.Notification.new()
+      |> Notification.new()
       |> PigeonTest.Sandbox.push()
 
     assert n.response == :success
@@ -13,7 +15,7 @@ defmodule Pigeon.SandboxTest do
   test "preserves not nil :response as is" do
     n =
       {:token, "test"}
-      |> Pigeon.FCM.Notification.new()
+      |> Notification.new()
       |> Map.put(:response, :timeout)
       |> PigeonTest.Sandbox.push()
 

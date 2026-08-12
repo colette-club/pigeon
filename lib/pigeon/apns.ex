@@ -156,10 +156,6 @@ defmodule Pigeon.APNS do
   8. `cert.pem` and `key_unencrypted.pem` can now be used in your configuration.
   """
 
-  defstruct config: nil,
-            queue: Pigeon.HTTP.RequestQueue.new(),
-            socket: nil
-
   @behaviour Pigeon.Adapter
 
   import Pigeon.Tasks, only: [process_on_response: 1]
@@ -169,6 +165,10 @@ defmodule Pigeon.APNS do
   alias Pigeon.HTTP.{Request, RequestQueue}
 
   require Logger
+
+  defstruct config: nil,
+            queue: RequestQueue.new(),
+            socket: nil
 
   @impl true
   def init(opts) do

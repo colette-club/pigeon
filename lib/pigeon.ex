@@ -78,7 +78,7 @@ defmodule Pigeon do
       config :pigeon, :default_pool_size, 5
   """
   @spec default_pool_size :: pos_integer()
-  def default_pool_size() do
+  def default_pool_size do
     Application.get_env(:pigeon, :default_pool_size, 5)
   end
 
