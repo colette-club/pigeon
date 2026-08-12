@@ -7,6 +7,7 @@ defmodule Pigeon.FCMTest do
   alias Pigeon.FCM
   alias Pigeon.FCM.Config
   alias Pigeon.FCM.Notification
+  alias Pigeon.HTTP.Request
   alias Pigeon.HTTP.RequestQueue
   require Logger
 
@@ -39,6 +40,34 @@ defmodule Pigeon.FCMTest do
     }
   end
 
+  # A connection Mint will actually write a request to: a real socket, pointed
+  # at a local listener that never answers. Enough to drive `Mint.HTTP.request`
+  # through encoding and transport send without reaching fcm.googleapis.com.
+  defp writable_socket do
+    {:ok, listener} = :gen_tcp.listen(0, [:binary, active: false])
+    {:ok, port} = :inet.port(listener)
+
+    {:ok, socket} =
+      :gen_tcp.connect(~c"localhost", port, [:binary, active: false])
+
+    {:ok, _accepted} = :gen_tcp.accept(listener)
+
+    %Mint.HTTP2{
+      transport: Mint.Core.Transport.TCP,
+      socket: socket,
+      mode: :active,
+      state: :open,
+      scheme: "https",
+      hostname: "fcm.googleapis.com",
+      authority: "fcm.googleapis.com",
+      port: 443
+    }
+  end
+
+  defp reachable_config do
+    %Config{auth: PigeonTest.Goth, project_id: "example-project"}
+  end
+
   defp notification_replying_to(pid) do
     notification = Notification.new({:token, "device-token"}, %{}, @data)
     on_response = fn response -> send(pid, {:responded, response}) end
@@ -66,6 +95,28 @@ defmodule Pigeon.FCMTest do
   end
 
   describe "handle_push/2" do
+    test "when the connection is healthy, queues the request against it" do
+      state = %FCM{config: reachable_config(), socket: writable_socket()}
+
+      assert {:noreply, new_state} =
+               FCM.handle_push(notification_replying_to(self()), state)
+
+      assert [%Request{notification: %Notification{}}] =
+               Map.values(new_state.queue.requests)
+
+      refute_receive {:responded, _notification}, 200
+    end
+
+    test "when the connection cannot open another stream, reports the notification as unavailable" do
+      socket = %{writable_socket() | open_client_stream_count: 100}
+      state = %FCM{config: unreachable_config(), socket: socket}
+
+      assert {:noreply, _new_state} =
+               FCM.handle_push(notification_replying_to(self()), state)
+
+      assert_receive {:responded, %Notification{response: :unavailable}}, 1_000
+    end
+
     test "when the connection is dead, reports the notification as unavailable" do
       state = %FCM{config: unreachable_config(), socket: closed_socket()}
 
